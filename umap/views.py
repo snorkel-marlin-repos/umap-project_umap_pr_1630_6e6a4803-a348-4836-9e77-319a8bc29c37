@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from http.client import InvalidURL
 from io import BytesIO
 from pathlib import Path
-from smtplib import SMTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, quote_plus, urlparse
 from urllib.request import Request, build_opener
@@ -67,7 +66,14 @@ from .forms import (
     UserProfileForm,
 )
 from .models import DataLayer, Licence, Map, Pictogram, Star, TileLayer
-from .utils import ConflictError, _urls_for_js, gzip_file, is_ajax, merge_features
+from .utils import (
+    ConflictError,
+    _urls_for_js,
+    gzip_file,
+    is_ajax,
+    json_dumps,
+    merge_features,
+)
 
 User = get_user_model()
 
@@ -315,7 +321,7 @@ class UserDownload(DetailView, SearchMixin):
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             for map_ in self.get_maps():
                 umapjson = map_.generate_umapjson(self.request)
-                geojson_file = io.StringIO(json.dumps(umapjson))
+                geojson_file = io.StringIO(json_dumps(umapjson))
                 file_name = f"umap_backup_{map_.slug}_{map_.pk}.umap"
                 zip_file.writestr(file_name, geojson_file.getvalue())
 
@@ -354,7 +360,7 @@ class MapsShowCase(View):
             }
 
         geojson = {"type": "FeatureCollection", "features": [make(m) for m in maps]}
-        return HttpResponse(smart_bytes(json.dumps(geojson)))
+        return HttpResponse(smart_bytes(json_dumps(geojson)))
 
 
 showcase = MapsShowCase.as_view()
@@ -441,7 +447,7 @@ ajax_proxy = AjaxProxy.as_view()
 
 
 def simple_json_response(**kwargs):
-    return HttpResponse(json.dumps(kwargs), content_type="application/json")
+    return HttpResponse(json_dumps(kwargs), content_type="application/json")
 
 
 # ############## #
@@ -537,7 +543,7 @@ class MapDetailMixin:
             geojson["properties"] = {}
         geojson["properties"].update(properties)
         geojson["properties"]["datalayers"] = self.get_datalayers()
-        context["map_settings"] = json.dumps(geojson, indent=settings.DEBUG)
+        context["map_settings"] = json_dumps(geojson, indent=settings.DEBUG)
         self.set_preconnect(geojson["properties"], context)
         return context
 
@@ -837,19 +843,16 @@ class SendEditLink(FormLessEditMixin, FormView):
             return HttpResponseBadRequest("Invalid")
         link = self.object.get_anonymous_edit_url()
 
-        subject = _(
-            "The uMap edit link for your map: %(map_name)s"
-            % {"map_name": self.object.name}
+        send_mail(
+            _(
+                "The uMap edit link for your map: %(map_name)s"
+                % {"map_name": self.object.name}
+            ),
+            _("Here is your secret edit link: %(link)s" % {"link": link}),
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
         )
-        body = _("Here is your secret edit link: %(link)s" % {"link": link})
-        try:
-            send_mail(
-                subject, body, settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False
-            )
-        except SMTPException:
-            return simple_json_response(
-                error=_("Can't send email to %(email)s" % {"email": email})
-            )
         return simple_json_response(
             info=_("Email sent to %(email)s" % {"email": email})
         )
@@ -1080,9 +1083,7 @@ class DataLayerUpdate(FormLessEditMixin, GZipMixin, UpdateView):
 
         try:
             merged_features = merge_features(
-                reference.get("features", []),
-                latest.get("features", []),
-                entrant.get("features", []),
+                reference["features"], latest["features"], entrant["features"]
             )
             latest["features"] = merged_features
             return latest
@@ -1106,7 +1107,7 @@ class DataLayerUpdate(FormLessEditMixin, GZipMixin, UpdateView):
 
             # Replace the uploaded file by the merged version.
             self.request.FILES["geojson"].file = BytesIO(
-                json.dumps(merged).encode("utf-8")
+                json_dumps(merged).encode("utf-8")
             )
 
             # Mark the data to be reloaded by form_valid
