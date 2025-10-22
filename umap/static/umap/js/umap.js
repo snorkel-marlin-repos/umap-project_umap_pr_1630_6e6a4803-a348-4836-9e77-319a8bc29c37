@@ -125,12 +125,18 @@ U.Map = L.Map.extend({
     // To be used in javascript APIs
     if (geojson.properties.lang) L.lang = geojson.properties.lang
 
-    this.setOptionsFromQueryString(geojson.properties)
-    // Prevent default creation of controls
-    const zoomControl = geojson.properties.zoomControl
-    const fullscreenControl = geojson.properties.fullscreenControl
+    // Don't let default autocreation of controls
+    const zoomControl =
+      typeof geojson.properties.zoomControl !== 'undefined'
+        ? geojson.properties.zoomControl
+        : true
     geojson.properties.zoomControl = false
+    const fullscreenControl =
+      typeof geojson.properties.fullscreenControl !== 'undefined'
+        ? geojson.properties.fullscreenControl
+        : true
     geojson.properties.fullscreenControl = false
+    this.setOptionsFromQueryString(geojson.properties)
 
     L.Map.prototype.initialize.call(this, el, geojson.properties)
     U.DEFAULT_ICON_URL = this.options.default_iconUrl
@@ -149,8 +155,8 @@ U.Map = L.Map.extend({
     this.name = this.options.name
     this.description = this.options.description
     this.demoTileInfos = this.options.demoTileInfos
-    this.options.zoomControl = zoomControl !== undefined ? zoomControl : true
-    this.options.fullscreenControl = fullscreenControl !== undefined ? fullscreenControl : true
+    this.options.zoomControl = zoomControl
+    this.options.fullscreenControl = fullscreenControl
     this.datalayersOnLoad = L.Util.queryString('datalayers')
     if (this.datalayersOnLoad) {
       this.datalayersOnLoad = this.datalayersOnLoad.toString().split(',')
